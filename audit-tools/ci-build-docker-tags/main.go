@@ -14,6 +14,7 @@ import (
 
 	"github.com/goccy/go-yaml"
 	"github.com/google/go-github/v74/github"
+	"github.com/moby/buildkit/frontend/dockerfile/parser"
 )
 
 const perPage = 100
@@ -43,11 +44,16 @@ func main() {
 
 	repos := searchRepos(ctx, client, codeOwner)
 
-	fmt.Print("Getting repo build image details")
+	fmt.Print("Getting repo image details")
 	results := make([]result, 0, len(repos))
 	for repoName, repo := range repos {
-		image, tag := getBuildImageTag(ctx, client, repo)
-		results = append(results, result{repoName, image, tag})
+		buildImage, buildTag := getBuildImageTag(ctx, client, repo)
+		runImage, runTag := getRunImageTag(ctx, client, repo)
+		results = append(results, result{
+			name:       repoName,
+			buildImage: image{image: buildImage, tag: buildTag},
+			runImage:   image{image: runImage, tag: runTag},
+		})
 		fmt.Print(".")
 	}
 	fmt.Println()
@@ -104,38 +110,51 @@ func searchRepos(ctx context.Context, client *github.Client, codeOwner string) m
 }
 
 type result struct {
-	name  string
+	name       string
+	buildImage image
+	runImage   image
+}
+
+type image struct {
 	image string
 	tag   string
 }
 
 func outputResults(results []result) {
 	maxNameLen := 0
-	maxImageLen := 0
-	maxTagLen := 0
+	maxBuildImageLen := 0
+	maxBuildTagLen := 0
+	maxRunImageLen := 0
+	maxRunTagLen := 0
 	for _, result := range results {
 		if len(result.name) > maxNameLen {
 			maxNameLen = len(result.name)
 		}
-		if len(result.image) > maxImageLen {
-			maxImageLen = len(result.image)
+		if len(result.buildImage.image) > maxBuildImageLen {
+			maxBuildImageLen = len(result.buildImage.image)
 		}
-		if len(result.tag) > maxTagLen {
-			maxTagLen = len(result.tag)
+		if len(result.buildImage.tag) > maxBuildTagLen {
+			maxBuildTagLen = len(result.buildImage.tag)
+		}
+		if len(result.buildImage.image) > maxRunImageLen {
+			maxRunImageLen = len(result.runImage.image)
+		}
+		if len(result.buildImage.tag) > maxRunTagLen {
+			maxRunTagLen = len(result.runImage.tag)
 		}
 	}
 	cmpFunc := func(a, b result) int {
 		return cmp.Or(
-			cmp.Compare(a.image, b.image),
-			-cmp.Compare(a.tag, b.tag),
+			cmp.Compare(a.buildImage.image, b.buildImage.image),
+			-cmp.Compare(a.buildImage.tag, b.buildImage.tag),
 			cmp.Compare(a.name, b.name),
 		)
 	}
 	slices.SortFunc(results, cmpFunc)
 
-	fmtString := fmt.Sprintf("%%%ds %%%ds %%%ds\n", maxNameLen, maxImageLen, maxTagLen)
+	fmtString := fmt.Sprintf("%%%ds %%%ds %%%ds %%%ds %%%ds\n", maxNameLen, maxBuildImageLen, maxBuildTagLen, maxRunImageLen, maxRunTagLen)
 	for _, result := range results {
-		fmt.Printf(fmtString, result.name, result.image, result.tag)
+		fmt.Printf(fmtString, result.name, result.buildImage.image, result.buildImage.tag, result.runImage.image, result.runImage.tag)
 	}
 }
 
@@ -169,4 +188,36 @@ func getBuildImageTag(ctx context.Context, client *github.Client, repo *github.R
 	tag = ciBuild.ImRes.Source.Tag
 
 	return image, tag
+}
+
+func getRunImageTag(ctx context.Context, client *github.Client, repo *github.Repository) (image, tag string) {
+	contents, _, r, err := client.Repositories.GetContents(ctx, repo.Owner.GetLogin(), repo.GetName(), "Dockerfile.concourse", nil)
+	if err != nil {
+		return
+	}
+	if r.Response.StatusCode == http.StatusNotFound {
+		return
+	}
+	data, err := contents.GetContent()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	reader := strings.NewReader(data)
+
+	node, err := parser.Parse(reader)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	for _, child := range node.AST.Children {
+		if child.Value == "FROM" {
+			baseImage := strings.Split(child.Next.Value, ":")
+			if len(baseImage) == 2 {
+				return baseImage[0], baseImage[1]
+			}
+		}
+	}
+
+	return "", ""
 }
