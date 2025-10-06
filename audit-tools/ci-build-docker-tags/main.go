@@ -121,11 +121,19 @@ type image struct {
 }
 
 func outputResults(results []result) {
-	maxNameLen := 0
-	maxBuildImageLen := 0
-	maxBuildTagLen := 0
-	maxRunImageLen := 0
-	maxRunTagLen := 0
+
+	nameLabel := "Repository"
+	buildImageLabel := "Build image name"
+	buildTagLabel := "Build image tag"
+	runImageLabel := "Running image name"
+	runTagLabel := "Running image tag"
+
+	maxNameLen := len(nameLabel)
+	maxBuildImageLen := len(buildImageLabel)
+	maxBuildTagLen := len(buildTagLabel)
+	maxRunImageLen := len(runImageLabel)
+	maxRunTagLen := len(runTagLabel)
+
 	for _, result := range results {
 		if len(result.name) > maxNameLen {
 			maxNameLen = len(result.name)
@@ -153,6 +161,11 @@ func outputResults(results []result) {
 	slices.SortFunc(results, cmpFunc)
 
 	fmtString := fmt.Sprintf("%%%ds %%%ds %%%ds %%%ds %%%ds\n", maxNameLen, maxBuildImageLen, maxBuildTagLen, maxRunImageLen, maxRunTagLen)
+
+	if len(results) > 0 {
+		fmt.Printf(fmtString, nameLabel, buildImageLabel, buildTagLabel, runImageLabel, runTagLabel)
+	}
+
 	for _, result := range results {
 		fmt.Printf(fmtString, result.name, result.buildImage.image, result.buildImage.tag, result.runImage.image, result.runImage.tag)
 	}
