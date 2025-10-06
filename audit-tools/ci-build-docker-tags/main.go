@@ -136,10 +136,10 @@ func outputResults(results []result) {
 		if len(result.buildImage.tag) > maxBuildTagLen {
 			maxBuildTagLen = len(result.buildImage.tag)
 		}
-		if len(result.buildImage.image) > maxRunImageLen {
+		if len(result.runImage.image) > maxRunImageLen {
 			maxRunImageLen = len(result.runImage.image)
 		}
-		if len(result.buildImage.tag) > maxRunTagLen {
+		if len(result.runImage.tag) > maxRunTagLen {
 			maxRunTagLen = len(result.runImage.tag)
 		}
 	}
